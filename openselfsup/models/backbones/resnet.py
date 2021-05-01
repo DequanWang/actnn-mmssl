@@ -6,7 +6,7 @@ from torch.nn.modules.batchnorm import _BatchNorm
 
 from openselfsup.utils import get_root_logger
 from ..registry import BACKBONES
-from ..utils import build_conv_layer, build_norm_layer
+from mmcv.cnn import build_conv_layer, build_norm_layer, build_activation_layer
 
 
 class BasicBlock(nn.Module):
@@ -21,7 +21,8 @@ class BasicBlock(nn.Module):
                  style='pytorch',
                  with_cp=False,
                  conv_cfg=None,
-                 norm_cfg=dict(type='BN')):
+                 norm_cfg=dict(type='BN'),
+                 act_cfg=dict(type='ReLU', inplace=True)):
         super(BasicBlock, self).__init__()
 
         self.norm1_name, norm1 = build_norm_layer(norm_cfg, planes, postfix=1)
@@ -41,7 +42,7 @@ class BasicBlock(nn.Module):
             conv_cfg, planes, planes, 3, padding=1, bias=False)
         self.add_module(self.norm2_name, norm2)
 
-        self.relu = nn.ReLU(inplace=True)
+        self.relu = build_activation_layer(act_cfg)
         self.downsample = downsample
         self.stride = stride
         self.dilation = dilation
@@ -86,7 +87,8 @@ class Bottleneck(nn.Module):
                  style='pytorch',
                  with_cp=False,
                  conv_cfg=None,
-                 norm_cfg=dict(type='BN')):
+                 norm_cfg=dict(type='BN'),
+                 act_cfg=dict(type='ReLU', inplace=True)):
         """Bottleneck block for ResNet.
         If style is "pytorch", the stride-two layer is the 3x3 conv layer,
         if it is "caffe", the stride-two layer is the first 1x1 conv layer.
@@ -141,7 +143,7 @@ class Bottleneck(nn.Module):
             bias=False)
         self.add_module(self.norm3_name, norm3)
 
-        self.relu = nn.ReLU(inplace=True)
+        self.relu = build_activation_layer(act_cfg)
         self.downsample = downsample
 
     @property
@@ -198,7 +200,8 @@ def make_res_layer(block,
                    style='pytorch',
                    with_cp=False,
                    conv_cfg=None,
-                   norm_cfg=dict(type='BN')):
+                   norm_cfg=dict(type='BN'),
+                   act_cfg=dict(type='ReLU', inplace=True)):
     downsample = None
     if stride != 1 or inplanes != planes * block.expansion:
         downsample = nn.Sequential(
@@ -223,7 +226,8 @@ def make_res_layer(block,
             style=style,
             with_cp=with_cp,
             conv_cfg=conv_cfg,
-            norm_cfg=norm_cfg))
+            norm_cfg=norm_cfg,
+            act_cfg=act_cfg))
     inplanes = planes * block.expansion
     for i in range(1, blocks):
         layers.append(
@@ -235,7 +239,8 @@ def make_res_layer(block,
                 style=style,
                 with_cp=with_cp,
                 conv_cfg=conv_cfg,
-                norm_cfg=norm_cfg))
+                norm_cfg=norm_cfg,
+                act_cfg=act_cfg))
 
     return nn.Sequential(*layers)
 
@@ -299,6 +304,7 @@ class ResNet(nn.Module):
                  frozen_stages=-1,
                  conv_cfg=None,
                  norm_cfg=dict(type='BN', requires_grad=True),
+                 act_cfg=dict(type='ReLU', inplace=True),
                  norm_eval=False,
                  with_cp=False,
                  zero_init_residual=False):
@@ -317,6 +323,7 @@ class ResNet(nn.Module):
         self.frozen_stages = frozen_stages
         self.conv_cfg = conv_cfg
         self.norm_cfg = norm_cfg
+        self.act_cfg=act_cfg
         self.with_cp = with_cp
         self.norm_eval = norm_eval
         self.zero_init_residual = zero_init_residual
@@ -341,7 +348,8 @@ class ResNet(nn.Module):
                 style=self.style,
                 with_cp=with_cp,
                 conv_cfg=conv_cfg,
-                norm_cfg=norm_cfg)
+                norm_cfg=norm_cfg,
+                act_cfg=act_cfg)
             self.inplanes = planes * self.block.expansion
             layer_name = 'layer{}'.format(i + 1)
             self.add_module(layer_name, res_layer)
@@ -367,7 +375,7 @@ class ResNet(nn.Module):
             bias=False)
         self.norm1_name, norm1 = build_norm_layer(self.norm_cfg, 64, postfix=1)
         self.add_module(self.norm1_name, norm1)
-        self.relu = nn.ReLU(inplace=True)
+        self.relu = build_activation_layer(self.act_cfg)
         self.maxpool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
 
     def _freeze_stages(self):
